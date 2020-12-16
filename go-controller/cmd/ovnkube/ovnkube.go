@@ -242,12 +242,11 @@ func runOvnKube(ctx *cli.Context) error {
 			return fmt.Errorf("error when trying to initialize go-ovn SB client: %v", err)
 		}
 
+		ovnController := ovn.NewOvnController(ovnClientset, masterWatchFactory, stopChan, nil, ovnNBClient, ovnSBClient, util.EventRecorder(ovnClientset.KubeClient))
 		// register prometheus metrics exported by the master
 		// this must be done prior to calling controller start
 		// since we capture some metrics in Start()
-		metrics.RegisterMasterMetrics(ovnNBClient, ovnSBClient)
-
-		ovnController := ovn.NewOvnController(ovnClientset, masterWatchFactory, stopChan, nil, ovnNBClient, ovnSBClient, util.EventRecorder(ovnClientset.KubeClient))
+		metrics.RegisterMasterMetrics(ovnNBClient, ovnSBClient, ovnController)
 		if err := ovnController.Start(master, wg); err != nil {
 			return err
 		}

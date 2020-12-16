@@ -909,3 +909,18 @@ func (oc *Controller) shutdownHandlers(np *namespacePolicy) {
 		oc.watchFactory.RemoveNamespaceHandler(handler)
 	}
 }
+
+func (oc *Controller) GetPodCountForPolicy(namespaceName, policyName string) int {
+	nsInfo := oc.getNamespaceLocked(namespaceName)
+	if nsInfo == nil {
+		return 0
+	}
+	defer nsInfo.Unlock()
+	np := nsInfo.networkPolicies[policyName]
+	if np == nil {
+		return 0
+	}
+	np.Lock()
+	defer np.Unlock()
+	return len(np.localPods)
+}

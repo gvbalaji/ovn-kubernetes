@@ -8,7 +8,8 @@ import (
 
 	goovn "github.com/ebay/go-ovn"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
-	util "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/ovn"
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 	"github.com/prometheus/client_golang/prometheus"
 
 	kapi "k8s.io/api/core/v1"
@@ -143,12 +144,35 @@ var metricV6AllocatedHostSubnetCount = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help:      "The total number of v6 host subnets currently allocated",
 })
 
+var metricNetworkPolicyCountInNameSpace = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: MetricOvnkubeNamespace,
+	Subsystem: MetricOvnkubeSubsystemMaster,
+	Name:      "num_network_policies_in_namespace",
+	Help: "A metric that captures the number of network policies in a namespace. This metric is labled with " +
+		"namespace name."},
+	[]string{
+		"namespace",
+	},
+)
+
+var metricPodCountInNetworkPolicy = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: MetricOvnkubeNamespace,
+	Subsystem: MetricOvnkubeSubsystemMaster,
+	Name:      "pod_count_in_policy",
+	Help: "A metric that captures the number of affected pods in a network policy. This metric is labled with " +
+		"namespace and policy names."},
+	[]string{
+		"namespace",
+		"policy",
+	},
+)
+
 var registerMasterMetricsOnce sync.Once
 var startE2ETimeStampUpdaterOnce sync.Once
 
 // RegisterMasterMetrics registers some ovnkube master metrics with the Prometheus
 // registry
-func RegisterMasterMetrics(nbClient, sbClient goovn.Client) {
+func RegisterMasterMetrics(nbClient, sbClient goovn.Client, ovnController *ovn.Controller) {
 	registerMasterMetricsOnce.Do(func() {
 		// ovnkube-master metrics
 		// the updater for this metric is activated
@@ -215,7 +239,11 @@ func RegisterMasterMetrics(nbClient, sbClient goovn.Client) {
 		prometheus.MustRegister(metricV6HostSubnetCount)
 		prometheus.MustRegister(metricV4AllocatedHostSubnetCount)
 		prometheus.MustRegister(metricV6AllocatedHostSubnetCount)
+		prometheus.MustRegister(metricNetworkPolicyCountInNameSpace)
+		prometheus.MustRegister(metricPodCountInNetworkPolicy)
 	})
+	//Namespace metrics updater
+	go namespaceMetricsUpdater(ovnController)
 }
 
 // StartE2ETimeStampMetricUpdater adds a goroutine that updates a "timestamp" value in the
@@ -283,4 +311,27 @@ func RecordSubnetUsage(v4SubnetsAllocated, v6SubnetsAllocated float64) {
 func RecordSubnetCount(v4SubnetCount, v6SubnetCount float64) {
 	metricV4HostSubnetCount.Set(v4SubnetCount)
 	metricV6HostSubnetCount.Set(v6SubnetCount)
+}
+
+func namespaceMetricsUpdater(ovnController *ovn.Controller) {
+	for {
+		updateNamespaceMetrics(ovnController)
+		time.Sleep(30 * time.Second)
+	}
+}
+
+func updateNamespaceMetrics(ovnController *ovn.Controller) {
+	nameSpaces := ovnController.GetAllNameSpaceNames()
+	for _, ns := range nameSpaces {
+		policies := ovnController.GetAllPolicyNamesForNamespace(ns)
+		metricNetworkPolicyCountInNameSpace.WithLabelValues(ns).Set(float64(len(policies)))
+		updatePodCountForPolicies(ovnController, ns, policies)
+	}
+}
+
+func updatePodCountForPolicies(ovnController *ovn.Controller, ns string, policies []string) {
+	for _, policy := range policies {
+		podCount := ovnController.GetPodCountForPolicy(ns, policy)
+		metricPodCountInNetworkPolicy.WithLabelValues(ns, policy).Set(float64(podCount))
+	}
 }

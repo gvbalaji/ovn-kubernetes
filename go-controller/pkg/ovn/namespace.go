@@ -2,11 +2,11 @@ package ovn
 
 import (
 	"fmt"
-	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
 	"net"
 	"strings"
 	"time"
 
+	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/config"
 	"github.com/ovn-org/ovn-kubernetes/go-controller/pkg/util"
 
 	kapi "k8s.io/api/core/v1"
@@ -406,4 +406,29 @@ func (oc *Controller) createNamespaceAddrSetAllPods(ns string) (AddressSet, erro
 	}
 
 	return oc.addressSetFactory.NewAddressSet(ns, ips)
+}
+
+func (oc *Controller) GetAllNameSpaceNames() []string {
+	oc.namespacesMutex.Lock()
+	defer oc.namespacesMutex.Unlock()
+	nameSpaces := make([]string, 0)
+	for ns := range oc.namespaces {
+		nameSpaces = append(nameSpaces, ns)
+	}
+	return nameSpaces
+}
+
+func (oc *Controller) GetAllPolicyNamesForNamespace(ns string) []string {
+	policies := make([]string, 0)
+	nsInfo := oc.getNamespaceLocked(ns)
+	if nsInfo == nil {
+		return policies
+	}
+	defer nsInfo.Unlock()
+	if nsInfo.networkPolicies != nil {
+		for policy := range nsInfo.networkPolicies {
+			policies = append(policies, policy)
+		}
+	}
+	return policies
 }
